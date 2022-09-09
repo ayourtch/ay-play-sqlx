@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
+enum DbPool {
+    Sqlite(sqlx::sqlite::SqlitePool),
+    Pg(sqlx::postgres::PgPool),
+}
+
 /// This program does something useful, but its author needs to edit this.
 /// Else it will be just hanging around forever
 #[derive(Debug, Clone, ClapParser, Serialize, Deserialize)]
@@ -11,6 +16,10 @@ struct Opts {
     /// Target hostname to do things on
     #[clap(short, long, default_value = "localhost")]
     target_host: String,
+
+    /// Database path
+    #[clap(short)]
+    db: String,
 
     /// Override options from this yaml/json file
     #[clap(short, long)]
@@ -21,8 +30,103 @@ struct Opts {
     verbose: i32,
 }
 
-async fn async_main() {
+async fn async_main(opts: Opts) -> Option<i32> {
+    use sqlx::Row;
     println!("Hello, world!");
+    let db = if opts.db.starts_with("sqlite://") {
+        let p = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(&opts.db)
+            .await
+            .ok()?;
+        DbPool::Sqlite(p)
+    } else if opts.db.starts_with("postgres://") {
+        let p = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&opts.db)
+            .await
+            .ok()?;
+        DbPool::Pg(p)
+    } else {
+        panic!("Need a database path");
+    };
+    println!("Connected to a db");
+
+    match &db {
+        DbPool::Sqlite(pool) => {
+            sqlx::query(
+                r#"
+CREATE TABLE IF NOT EXISTS ticket (
+  id integer primary key autoincrement,
+  name text
+);"#,
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        DbPool::Pg(pool) => {
+            sqlx::query(
+                r#"
+CREATE TABLE IF NOT EXISTS ticket (
+  id bigserial,
+  name text
+);"#,
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    };
+
+    let row = match &db {
+        DbPool::Sqlite(pool) => {
+            let row = sqlx::query_as("insert into ticket (name) values ($1) returning id")
+                .bind("a new ticket")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+            row
+        }
+        DbPool::Pg(pool) => {
+            let row: (i64,) = sqlx::query_as("insert into ticket (name) values ($1) returning id")
+                .bind("a new ticket")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+            row
+        }
+    };
+    println!("Row: {:?}", row);
+
+    match &db {
+        DbPool::Sqlite(pool) => {
+            let rows = sqlx::query("SELECT * FROM ticket")
+                .fetch_all(pool)
+                .await
+                .unwrap();
+            let str_result = rows
+                .iter()
+                .map(|r| format!("{} - {}", r.get::<i64, _>("id"), r.get::<String, _>("name")))
+                .collect::<Vec<String>>()
+                .join(", ");
+            println!("\n== select tickets with PgRowsa\n{}", str_result);
+        }
+        DbPool::Pg(pool) => {
+            let rows = sqlx::query("SELECT * FROM ticket")
+                .fetch_all(pool)
+                .await
+                .unwrap();
+            let str_result = rows
+                .iter()
+                .map(|r| format!("{} - {}", r.get::<i64, _>("id"), r.get::<String, _>("name")))
+                .collect::<Vec<String>>()
+                .join(", ");
+            println!("\n== select tickets with PgRows:\n{}", str_result);
+        }
+    }
+
+    Some(0)
 }
 
 fn main() {
@@ -53,6 +157,6 @@ fn main() {
     }
 
     println!("Hello, here is your options: {:#?}", &opts);
-    async_std::task::block_on(async_main());
 
+    async_std::task::block_on(async_main(opts));
 }
