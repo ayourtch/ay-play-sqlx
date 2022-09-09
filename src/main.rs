@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS ticket (
     });
 
     let tickets: Vec<Ticket> = xdb!(db, pool, {
-        let select_query = sqlx::query_as::<_, Ticket>("SELECT id, name FROM ticket");
+        let select_query = sqlx::query_as("SELECT id, name FROM ticket");
         select_query.fetch_all(pool).await.unwrap()
     });
     println!("tickets: {:?}", &tickets);
