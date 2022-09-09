@@ -8,6 +8,22 @@ enum DbPool {
     Pg(sqlx::postgres::PgPool),
 }
 
+use sqlx::{FromRow, Row};
+#[derive(Debug, FromRow, Clone)]
+struct Ticket {
+    id: i64,
+    name: String,
+}
+
+macro_rules! xdb {
+    ($db:ident, $pool:ident, $tree: tt) => {
+        match &$db {
+            DbPool::Sqlite($pool) => $tree,
+            DbPool::Pg($pool) => $tree,
+        }
+    };
+}
+
 /// This program does something useful, but its author needs to edit this.
 /// Else it will be just hanging around forever
 #[derive(Debug, Clone, ClapParser, Serialize, Deserialize)]
@@ -99,32 +115,24 @@ CREATE TABLE IF NOT EXISTS ticket (
     };
     println!("Row: {:?}", row);
 
-    match &db {
-        DbPool::Sqlite(pool) => {
-            let rows = sqlx::query("SELECT * FROM ticket")
-                .fetch_all(pool)
-                .await
-                .unwrap();
-            let str_result = rows
-                .iter()
-                .map(|r| format!("{} - {}", r.get::<i64, _>("id"), r.get::<String, _>("name")))
-                .collect::<Vec<String>>()
-                .join(", ");
-            println!("\n== select tickets with PgRowsa\n{}", str_result);
-        }
-        DbPool::Pg(pool) => {
-            let rows = sqlx::query("SELECT * FROM ticket")
-                .fetch_all(pool)
-                .await
-                .unwrap();
-            let str_result = rows
-                .iter()
-                .map(|r| format!("{} - {}", r.get::<i64, _>("id"), r.get::<String, _>("name")))
-                .collect::<Vec<String>>()
-                .join(", ");
-            println!("\n== select tickets with PgRows:\n{}", str_result);
-        }
-    }
+    xdb!(db, pool, {
+        let rows = sqlx::query("SELECT * FROM ticket")
+            .fetch_all(pool)
+            .await
+            .unwrap();
+        let str_result = rows
+            .iter()
+            .map(|r| format!("{} - {}", r.get::<i64, _>("id"), r.get::<String, _>("name")))
+            .collect::<Vec<String>>()
+            .join(", ");
+        println!("\n== select tickets:\n{}", str_result);
+    });
+
+    let tickets: Vec<Ticket> = xdb!(db, pool, {
+        let select_query = sqlx::query_as::<_, Ticket>("SELECT id, name FROM ticket");
+        select_query.fetch_all(pool).await.unwrap()
+    });
+    println!("tickets: {:?}", &tickets);
 
     Some(0)
 }
