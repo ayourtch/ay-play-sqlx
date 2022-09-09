@@ -94,26 +94,18 @@ CREATE TABLE IF NOT EXISTS ticket (
             .unwrap();
         }
     };
-
-    let row = match &db {
-        DbPool::Sqlite(pool) => {
-            let row = sqlx::query_as("insert into ticket (name) values ($1) returning id")
-                .bind("a new ticket")
-                .fetch_one(pool)
-                .await
-                .unwrap();
-            row
-        }
-        DbPool::Pg(pool) => {
+    {
+        let newid = xdb!(db, pool, {
             let row: (i64,) = sqlx::query_as("insert into ticket (name) values ($1) returning id")
                 .bind("a new ticket")
                 .fetch_one(pool)
                 .await
                 .unwrap();
-            row
-        }
-    };
-    println!("Row: {:?}", row);
+            row.0
+        });
+
+        println!("New id: {:?}", newid);
+    }
 
     xdb!(db, pool, {
         let rows = sqlx::query("SELECT * FROM ticket")
