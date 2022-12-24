@@ -54,14 +54,14 @@ async fn async_main(opts: Opts) -> Option<i32> {
             .max_connections(5)
             .connect(&opts.db)
             .await
-            .ok()?;
+            .unwrap();
         DbPool::Sqlite(p)
-    } else if opts.db.starts_with("postgres://") {
+    } else if opts.db.starts_with("postgresql://") {
         let p = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
             .connect(&opts.db)
             .await
-            .ok()?;
+            .unwrap();
         DbPool::Pg(p)
     } else {
         panic!("Need a database path");
